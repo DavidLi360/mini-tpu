@@ -1,0 +1,35 @@
+# ==========================================
+# Mini-TPU .gitignore
+# ==========================================
+
+# Simulation & Waveform Files (get very large)
+*.vcd
+*.fst
+*.lxt
+*.ghw
+*.gtkw
+
+# Icarus Verilog Compiled Binaries
+*.vvp
+*.out
+
+# Cocotb & Python
+__pycache__/
+*.py[cod]
+*$py.class
+sim_build/
+results.xml
+
+# Gowin EDA Build
+# Ignores the generated netlists, bitstreams, and reports
+impl/
+fpga/impl/
+*.fs
+*.bak
+*.user
+
+# OS & Editor Junk Files
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
