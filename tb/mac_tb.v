@@ -78,7 +78,8 @@ module mac_tb;
     end
 
 initial begin
-    $monitor("Time=%0t | rst_n=%b | en=%b | a=%3d | b=%3d || result=%5d", $time, rst_n, en, a, b, result); // monitor changes in inputs and output
+    // continuously monitor and print to console throughout the simulation
+    $monitor("Time=%0t | rst_n=%b | en=%b | a=%3d | b=%3d || result=%5d", $time, rst_n, en, a, b, result); 
 end
 
 endmodule
