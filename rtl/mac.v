@@ -11,7 +11,7 @@ module mac #(
     parameter OUT_WIDTH = 16
 )(
     input wire clk,              
-    input wire rst_n,            // active low synch reset
+    input wire rst_n, // active low synch reset
     input wire en,        
     // 8 bit inputs       
     input wire [IN_WIDTH-1:0] a,         
