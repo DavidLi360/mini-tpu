@@ -35,9 +35,10 @@ async def test_tpu_random_matrices(dut):
 
     # DATA SKEWING & MEMORY INJECTION
     # We must stagger the data diagonally 
-    # Format: [A0, A1, B0, B1]
+    
+    # Format: [Left_A0, Left_A1, Top_B0, Top_B1]
     row0 = pack_row(A[0,0], 0,      B[0,0], 0)
-    row1 = pack_row(A[1,0], A[0,1], B[0,1], B[1,0])
+    row1 = pack_row(A[0,1], A[1,0], B[1,0], B[0,1]) 
     row2 = pack_row(0,      A[1,1], 0,      B[1,1])
     row3 = pack_row(0,      0,      0,      0)
 
@@ -61,8 +62,7 @@ async def test_tpu_random_matrices(dut):
     # Wait one extra cycle for safety
     await RisingEdge(dut.clk) 
 
-  
-    # HARDWARE ASSERTIONS (THE FINAL CHECK)
+
     # Read the copper wires
     res_00 = dut.result_00.value.integer
     res_01 = dut.result_01.value.integer
@@ -71,7 +71,7 @@ async def test_tpu_random_matrices(dut):
 
     dut._log.info(f"--- Hardware Accelerator Output --- \n[{res_00}, {res_01}]\n[{res_10}, {res_11}]")
 
-    # If any of these fail, Cocotb immediately stops the test and throws a massive red error
+    # If any of these fail, Cocotb immediately stops the test and throws an error
     assert res_00 == expected_C[0,0], f"Hardware failed at 0,0: Got {res_00}, Expected {expected_C[0,0]}"
     assert res_01 == expected_C[0,1], f"Hardware failed at 0,1: Got {res_01}, Expected {expected_C[0,1]}"
     assert res_10 == expected_C[1,0], f"Hardware failed at 1,0: Got {res_10}, Expected {expected_C[1,0]}"
