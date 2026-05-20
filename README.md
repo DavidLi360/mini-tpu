@@ -1,19 +1,19 @@
 # Mini TPU Accelerator
 
-![Status](https://img.shields.io/badge/Status-Hardware_Verified-success)
+![Status](https://img.shields.io/badge/Status-Cocotb_Verified-success)
 ![Board](https://img.shields.io/badge/Board-Sipeed_Tang_Nano_9K-blue)
 
 <img width="3072" height="4096" alt="pc and fpga" src="https://github.com/user-attachments/assets/f3db03a6-b6fe-4645-8a24-ceef468db0e3" />
 
 This repository contains the physical implementation of a custom Tensor Processing Unit (TPU) and matrix multiplication accelerator, designed from scratch for the Sipeed Tang Nano 9K FPGA. 
 
-> video demo here
+[![Mini-TPU Hardware Demo](https://img.youtube.com/vi/yrxMmgOofpQ/maxresdefault.jpg)](https://youtu.be/yrxMmgOofpQ)
 
 ---
 
 ### Motivation
 
-As an electrical engineering student, I noticed a massive gap between studying digital logic in a textbook and actually getting a custom accelerator to run on physical silicon. The semiconductor industry is notoriously closed-source, so I built this Mini-TPU from scratch to understand on how these architectures work under the hood.
+As an electrical engineering student, I noticed a massive gap between studying digital logic in a textbook and actually getting a custom accelerator to run on physical silicon. The semiconductor industry is largely closed-source, so I built this Mini-TPU from scratch to understand on how these architectures work 'under the hood'.
 
 While my academic coursework gave me the theoretical foundation, I took on this project to dive headfirst into real-world semiconductor design and hardware verification. Building this was much more than just writing Verilog and passing Cocotb software simulations against a NumPy golden reference. I basically learned the hard way how unforgiving the hardware stuff is, forcing me to navigate problems that would not exist in a simulation based testing environment.
 
