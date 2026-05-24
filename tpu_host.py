@@ -2,19 +2,17 @@ import serial
 import time
 import numpy as np
 
-# --- System Configuration ---
+# System Configuration 
 COM_PORT = 'COM5'
 BAUD_RATE = 115200
 TIMEOUT_SEC = 2.0
 
-# --- Hardware Protocol ---
 # Command Opcodes (Host -> FPGA)
 OP_LOAD_WEIGHTS = b'\x01'
 OP_LOAD_INPUTS  = b'\x02'
 OP_EXECUTE      = b'\x03'
 OP_READ_OUT     = b'\x04'
 
-# Status Codes (FPGA -> Host)
 ACK = b'\xAA'  # Acknowledge / Done
 ERR = b'\xEE'  # Hardware Error
 
@@ -50,8 +48,7 @@ def send_matrix(ser: serial.Serial, opcode: bytes, matrix: np.ndarray, name: str
     ser.write(flat_data)
     
     # 3. Wait for hardware to acknowledge receipt
-    # Note: If Verilog UART TX isn't implemented yet, replace this with time.sleep(0.1)
-    # wait_for_ack(ser)  
+    
     time.sleep(0.1) 
 
 def main():
@@ -77,7 +74,7 @@ def main():
             time.sleep(1.5)  # Allow FTDI chip to stabilize after opening port
             print(f"✅ UART Link Established: {COM_PORT} @ {BAUD_RATE} baud.\n")
 
-            # --- Hardware Pipeline ---
+            # Hardware Pipeline
             send_matrix(ser, OP_LOAD_WEIGHTS, weights, "LOAD_WEIGHTS")
             send_matrix(ser, OP_LOAD_INPUTS, inputs, "LOAD_INPUTS")
             
@@ -85,7 +82,6 @@ def main():
             ser.write(OP_EXECUTE)
             
             # Wait for physical wavefront to propagate through the systolic array
-            # wait_for_ack(ser)
             time.sleep(0.5) 
             
             print("[READ_OUT] Fetching systolic array output buffers...")
