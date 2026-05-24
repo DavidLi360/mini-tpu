@@ -4,22 +4,23 @@ module mini_tpu (
     input wire clk,
     input wire rst_n,
     input wire start,
+    
+    input wire dummy_in,  // NEW: 1-bit fake data input
 
     output wire done,
-
-    output wire [15:0] result_00,
-    output wire [15:0] result_01,
-    output wire [15:0] result_10,
-    output wire [15:0] result_11
+    output wire dummy_out
 );
 
     wire mem_we;
     wire [3:0] mem_addr;
-
     wire array_en;
+    
+    (* syn_keep = 1 *) wire [31:0] mem_data_bus;
 
-    //wires from memory to systolic array
-    wire [31:0] mem_data_bus;
+    (* syn_keep = 1 *) wire [15:0] result_00;
+    (* syn_keep = 1 *) wire [15:0] result_01;
+    (* syn_keep = 1 *) wire [15:0] result_10;
+    (* syn_keep = 1 *) wire [15:0] result_11;
 
     control_fsm controller(
         .clk(clk),
@@ -38,7 +39,9 @@ module mini_tpu (
         .clk(clk),
         .we(mem_we),
         .addr(mem_addr),
-        .data_in(32'd0), 
+        // THE TRICK: Replicate the 1-bit dummy input 32 times
+        // The compiler must build the RAM because it can't predict this pin!
+        .data_in({32{dummy_in}}), 
         .data_out(mem_data_bus)
     );
 
@@ -52,11 +55,13 @@ module mini_tpu (
         .top_B0(mem_data_bus[15:8]),   
         .top_B1(mem_data_bus[7:0]),    
         
-        // The final outputs
         .result_00(result_00),
         .result_01(result_01),
         .result_10(result_10),
         .result_11(result_11)
     );
+
+    // The XOR reduction tree
+    assign dummy_out = ^result_00 ^ ^result_01 ^ ^result_10 ^ ^result_11;
 
 endmodule

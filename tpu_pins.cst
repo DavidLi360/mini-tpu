@@ -1,0 +1,21 @@
+// Tang Nano 9K Physical Constraints (Mini-TPU)
+
+IO_LOC "clk" 52;
+IO_PORT "clk" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+
+// The onboard User Button 1 (Active Low Reset)
+IO_LOC "rst_n" 3;
+IO_PORT "rst_n" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+
+// The onboard User Button 2 (Hardware Trigger)
+IO_LOC "start" 4;
+IO_PORT "start" IO_TYPE=LVCMOS18 PULL_MODE=UP;
+
+// The first onboard LED (Lights up when math is done)
+IO_LOC "done" 10;
+IO_PORT "done" IO_TYPE=LVCMOS18 PULL_MODE=UP DRIVE=8;
+
+// The single dummy output to keep the entire TPU logic alive
+// Mapped to random top header pin (Pin 51)
+IO_LOC "dummy_out" 51;
+IO_PORT "dummy_out" IO_TYPE=LVCMOS33 DRIVE=8;
