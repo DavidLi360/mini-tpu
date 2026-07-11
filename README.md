@@ -3,9 +3,11 @@
 ![Status](https://img.shields.io/badge/Status-Cocotb_Verified-success)
 ![Board](https://img.shields.io/badge/Board-Sipeed_Tang_Nano_9K-blue)
 
-<img width="3072" height="4096" alt="pc and fpga" src="https://github.com/user-attachments/assets/f3db03a6-b6fe-4645-8a24-ceef468db0e3" />
+<p align="center">
+  <img width="400" alt="pc and fpga" src="https://github.com/user-attachments/assets/f3db03a6-b6fe-4645-8a24-ceef468db0e3" />
+</p>
 
-This repository contains the physical implementation of a custom Tensor Processing Unit (TPU) and matrix multiplication accelerator, designed from scratch for the Sipeed Tang Nano 9K FPGA. 
+This repo holds a custom Tensor Processing Unit (TPU) core. It's a small systolic-array matrix multiplier that I designed from scratch, verified against a NumPy golden model, and actually synthesized and flashed onto a Sipeed Tang Nano 9K FPGA.
 
 [![Mini-TPU Hardware Demo](https://img.youtube.com/vi/yrxMmgOofpQ/maxresdefault.jpg)](https://youtu.be/yrxMmgOofpQ)
 
@@ -13,88 +15,86 @@ This repository contains the physical implementation of a custom Tensor Processi
 
 ### Motivation
 
-As an electrical engineering student, I noticed a massive gap between studying digital logic in a textbook and actually getting a custom accelerator to run on physical silicon. The semiconductor industry is largely closed-source, so I built this Mini-TPU from scratch to understand on how these architectures work 'under the hood'.
+As an EE student, I noticed a huge gap between studying digital logic in class and actually getting a custom accelerator running on physical silicon. The semiconductor industry is pretty closed off, so I decided to build this Mini-TPU from scratch to see how these architectures actually work under the hood.
 
-While my academic coursework gave me the theoretical foundation, I took on this project to dive headfirst into real-world semiconductor design and hardware verification. Building this was much more than just writing Verilog and passing Cocotb software simulations against a NumPy golden reference. I basically learned the hard way how unforgiving the hardware stuff is, forcing me to navigate problems that would not exist in a simulation based testing environment.
+While my classes gave me the theory, I took this project on to get hands-on with real hardware verification. I wanted to write a systolic array, prove the math works, and then fight through the painful process of getting it to run on a cheap FPGA instead of just passing in a simulator.
 
-## Architecture 
-
-The fundamental hardware relies on highly parallelized matrix multiplication. This project implements a custom systolic array designed specifically to fit within the logic gate constraints of the Tang Nano 9K.
+## Architecture
 
 ### The Processing Element (PE)
-At the core of the accelerator is the Processing Element. Unlike a general-purpose CPU core that handles branching logic and memory management, a PE is highly specialized to do exactly one hardware operation: Multiply-Accumulate (MAC). 
+At the core of the accelerator is the Processing Element (`mac.v`). Unlike a normal CPU core that deals with branching and memory, a PE is specialized to do exactly one thing: Multiply-Accumulate (MAC).
 
-* **The Operation:** `Output = (Input × Weight) + Partial_Sum`
-* **Execution:** Each PE computes its local MAC operation in a single clock cycle and passes the resulting partial sum down to the adjacent PE in the next clock cycle.
+* **The Operation:** `result <= result + (a * b)`, computed every cycle `en` is asserted.
+* Four of these are instantiated to form the 2x2 array.
 
-### The Systolic Array
-To achieve massive parallelism, the individual PEs are tiled into a grid known as a Systolic Array. 
+### The Systolic Array (`systolic_2x2.v`)
+The four PEs are wired into a 2x2 grid where each one is fixed in place and accumulates a single output element (`result_00` to `result_11`). This makes it closer to an **output-stationary** array than a weight-stationary one. Both the input matrix (`A`, coming from the left) and the weight matrix (`B`, coming from the top) stream in together. They are skewed by one clock cycle per row so each PE gets the right operands on the right cycle:
 
-* **Weight Stationary Architecture:** Before a calculation begins, the target matrix weights are pre-loaded and locked into the local PE registers. 
-* **Wavefront Data Flow:** Input data (matrices) flows horizontally across the array, while the calculated partial sums flow vertically. This continuous "pumping" of data through the physical hardware grid allows the FPGA to calculate an entire matrix dot-product without needing to constantly read and write to standard memory (SRAM). 
+* PE(0,0) operates directly on the incoming edge values.
+* PE(0,1) and PE(1,0) each grab one delayed operand (`a_delay_00`, `b_delay_00`) so they line up with the diagonal wavefront.
+* PE(1,1) needs two delayed operands (`a_delay_10`, `b_delay_01`).
 
-### Instruction Set & Control
-This TPU operates as a coprocessor. It does not fetch its own code; it waits for the host machine (via Python serial communication) to send it specific byte-encoded instructions. 
+I verified this timing by hand using the skewed row-packing scheme from the testbenches, and then confirmed it in simulation. Feeding `A=[[1,2],[3,4]]` against an identity matrix spits out `[[1,2],[3,4]]` unchanged, and randomized 2x2 inputs are automatically checked against NumPy (more on that in Verification).
 
-A standard matrix execution pipeline follows this sequence:
-1. `LOAD_WEIGHTS`: Streams the static matrix weights into the PE grid.
-2. `LOAD_INPUTS`: Streams the target input vectors into the hardware data buffers.
-3. `EXECUTE_MATMUL`: Triggers the PE clock cycles, pumping the data through the systolic array.
-4. `READ_OUT`: Fetches the final accumulated matrix from the output buffer back over the serial bus to the host.
+### Control & Memory
+`control_fsm.v` is a basic 3-state FSM (`IDLE -> COMPUTE -> DONE`). It walks a step counter from 0 to 6 on `start`, sequences reads out of a small block-RAM (`bsram.v`), and drives the systolic array's enable window. This ensures the pre-packed, skewed rows hit the array at the exact right cycle, and then holds the array enabled for a few extra cycles to flush the pipeline before firing the `done` signal.
 
+## Current State: What's Verified vs. What's Planned
 
-## Hardware Execution 
+This project currently has two separate pieces of proof, and I want to be super clear about what each one does:
 
-Translating simulated logic gates into physical voltage on a cheap FPGA introduces many different engineering problems. 
+1. **The compute core is functionally correct.** It is verified two different ways, including against randomized inputs.
+2. **The compute core synthesizes and runs on real Tang Nano 9K silicon.** Check the hardware bring-up section below for that journey.
+
+**What is *not* built yet:** A way to load arbitrary matrices into the chip from my PC while it is running on the board. Right now, matrix data only gets into `bsram.v` through direct simulation injection (`$readmemh` in the Verilog testbench or a direct register poke from Cocotb). There is no UART or host-facing interface in the RTL just yet. `tpu_host.py` outlines the serial protocol (`LOAD_WEIGHTS` / `LOAD_INPUTS` / `EXECUTE_MATMUL` / `READ_OUT`) that a future UART bridge will use, but `mini_tpu.v` does not listen for it yet. That is the next big milestone.
+
+Another honest caveat is that the current `mini_tpu.v` top level (the one the testbenches use) ties the write data input of `bsram` to a constant `0` since nothing drives it yet. A smart synthesis tool will notice that and optimize the entire compute path down to a constant zero. That is exactly the failure mode I hit during hardware bring-up! The version of the design I actually flashed to prove BRAM inference used a throwaway 1-bit `dummy_in` input. I replicated this across the data bus just to give the synthesizer something unpredictable to keep around. That synthesis-only trick and the verification-only top level in this repo still need to be merged into one canonical top module.
+
+## Simulation & Verification
+
+Hardware is super unforgiving, so before I even touched the physical JTAG pins, I had to prove the logic gates actually worked in software.
+
+* **Per-module testbenches:** Standard Verilog/Icarus testbenches to exercise each block in isolation (`mac_tb.v`, `bsram_tb.v`, etc.).
+* **Full-integration testbench:** `mini_tpu_tb.v` loads a fixed matrix pair via `$readmemh`, runs the whole pipeline, and prints the final matrix.
+* **Randomized golden-model regression:** Powered by Cocotb and `test_mini_tpu.py`. This generates a fresh random 2x2 input pair every run, calculates the expected result with NumPy, drives the DUT, and asserts that the hardware output matches perfectly. I ran this on a loop with different random seeds to make sure it wasn't just passing a lucky fixed case.
+* **Waveform debugging:** Icarus dumps a `.vcd` file for each testbench. I used GTKWave (from the YosysHQ OSS CAD Suite) to trace the skewed data wavefront cycle-by-cycle whenever I ran into timing bugs.
+
+## Hardware Bring-Up
+
+Translating simulated logic into physical voltages on cheap FPGA silicon brought up a ton of problems that just do not exist in a simulator.
 
 ### The Toolchain
 
-I skipped the Gowin Programmer. It masked underlying hardware errors. We are using a strictly open-source, explicit toolchain.
+I skipped the official Gowin Programmer because it masked underlying hardware errors. Instead, I used a strictly open-source toolchain.
 
-1. **The Flasher:** I used `openFPGALoader`, specifically the pre-compiled version bundled inside the **YosysHQ OSS CAD Suite**. 
-2. **The Driver:** You must use the standard `WinUSB` driver. Use Zadig to replace the factory FTDI driver on `Interface 0` (usually labeled "JTAG Debugger" or "USB Serial Converter A") with `WinUSB`.
-3. **The Command:** Open the OSS CAD Suite terminal and execute the physical flash:
-   ```bash
+1. **The Flasher:** `openFPGALoader`, specifically the pre-compiled version bundled inside the **YosysHQ OSS CAD Suite**.
+2. **The Driver:** The standard `WinUSB` driver via Zadig, replacing the factory FTDI driver on `Interface 0` ("JTAG Debugger" / "USB Serial Converter A").
+3. **The Command:**
+```bash
    openFPGALoader -b tangnano9k <path_to_file>.fs
+```
 
-### Hardware Troubleshooting
+### Troubleshooting Log
 
-Getting dense matrix multiplication logic to successfully flash onto cheap silicon is rarely a clean process. Some of the roadblocks I've encountered whilst implementing on hardware include:
-* Error -1 (usb bulk write failed): This is a physical power issue, rather than a software bug. When you try to flash the SRAM, the board draws a massive power spike. If you are using a cheap USB-C cable like I was, windows severs the connection mid-flash. I fixed this problem by using a more high quality data cable (like a laptop/phone charger)
+* **Error -1 (usb bulk write failed):** This was actually a physical power issue, not a software bug. Flashing SRAM draws a big power spike, and my cheap USB-C cable let Windows drop the connection mid-flash. Swapping to a higher-quality data cable fixed it instantly.
 
-<img width="4096" height="3072" alt="cable img" src="https://github.com/user-attachments/assets/3e58b403-54ae-4a49-846b-6a2b4bebe5f1" />
+  <p align="center">
+  <img width="600" alt="cable img" src="https://github.com/user-attachments/assets/3e58b403-54ae-4a49-846b-6a2b4bebe5f1" />
+  <br>
+  <em>Swapping from the black cable to the white cable fixed it.</em>
+</p>
 
-*I used the black cable at first, and when I swapped to the white cable, the problem fixed itself.*
+  *Swapping from the black cable to the white cable fixed it.*
 
+* **Error -6 (ftdi_usb_reset failed) and the pin lockout:** If the board already has an old bitstream on it, that design boots the second it gets power and can fight the JTAG pins during a new flash. The fix was to hold **S1** and **S2** while plugging the board in, keeping it in reset so the JTAG pins stay open.
 
-* **The Pin Lockout: Error -6 (ftdi_usb_reset failed):** If your Tang Nano has an old bitstream already on it, that design boots up the second you plug the board in. If that old design is actively driving the JTAG pins or drawing heavy power, it fights the USB cable when you try to flash the new design, causing `openFPGALoader` to panic and fail the reset handshake. I got around this by forcing the FPGA to stay asleep during power-up. Just unplug the board, hold down both the **S1** and **S2** buttons, and plug it back in while holding them down. The JTAG pins will remain open and silent.
+* **Windows driver conflicts:** Drivers like `libusbK` and `libusb-win32` caused USB deadlocks or `-6` errors against the Tang Nano's FTDI clone chip, even though they usually work great for other microcontrollers. Forcing it to strictly use `WinUSB` via Zadig solved the headache.
 
-* **Windows Driver Conflicts:** When dealing with clone FTDI chips on modern Windows builds, driver selection is an absolute minefield. I found out the hard way that using `libusbK` or `libusb-win32` will just cause USB deadlocks or throw `-6` errors with the Tang Nano's emulator chip, even though those drivers are robust for other microcontrollers. To fix this, stick strictly to the **`WinUSB`** driver via Zadig.
+* **BRAM getting optimized away:** Since no real external input was driving the memory, the synthesis tool had no reason to keep the block RAM and kept collapsing it into constants. I bypassed this during bring-up with a disposable 1-bit input replicated across the write-data bus, which gave the synthesizer something unpredictable to preserve. It was a neat synthesis trick, but as I mentioned earlier, it is not part of the verified top level in this repo yet.
 
-## Simulation & Testing (The "Verification")
+## Roadmap
 
-Hardware is incredibly unforgiving. Before I even thought about touching physical JTAG pins or fighting with USB drivers, I had to prove the logic gates actually worked in software. If the math is wrong in the simulation, it is going to be wrong on the silicon. 
-
-### The Python/Cocotb Testbench
-
-Traditional Verilog testbenches are notoriously tedious when you are dealing with complex tensor math. Instead, I used Cocotb. This framework allowed me to write my hardware testbenches entirely in Python, bridging high-level software abstractions with low-level RTL.
-
-* **The Golden Reference:** I used standard Python `NumPy` arrays to calculate the exact, correct matrix multiplication results. This served as my undisputed "golden reference."
-* **The Hardware Execution:** The Cocotb script injects those same input matrices into the simulated Verilog design, drives the clock cycles, and reads the final accumulated output back out of the buffers.
-* **The Verification:** The script asserts that the Verilog output perfectly matches the NumPy output. If it passes, the logic is sound.
-
-### Viewing Waveforms (GTKWave)
-
-When a hardware test fails, you cannot just `print()` a variable to the console to see what went wrong. You have to look at the physical timing of the simulated electrical signals. 
-
-* **The VCD Dump:** During the Cocotb simulation, the toolchain dumps a `.vcd` (Value Change Dump) file. This file records the state of every single wire, register, and bus in the TPU at every simulated nanosecond.
-* **GTKWave:** I use GTKWave (which is conveniently bundled in the YosysHQ OSS CAD Suite alongside our flasher tool) to open these `.vcd` files. This allows me to visually inspect the clock cycles, trace the data wavefront pumping through the systolic array, and pinpoint exactly which Processing Element stalled or dropped a bit.
-
-## Future Steps & Roadmap
-
-Getting the systolic array pumping data and returning verified matrix multiplication on physical silicon was the primary goal of this V1 build. Now that the hardware pipeline and the USB/JTAG toolchain are completely rock-solid, the next phase is scaling the architecture from a basic math coprocessor into a true neural accelerator.
-
-Here is what is next on the development roadmap:
-
-* **BRAM Routing & Matrix Scaling:** The Tang Nano 9K has a strict logic gate limit, which currently bottlenecks the maximum matrix dimensions I can compile without causing massive routing congestion. The next architectural revision will focus heavily on migrating the matrix weight registers and input buffers away from distributed logic and explicitly mapping them into the FPGA's dedicated Block RAM (BRAM).
-* **Silicon Profiling:** I plan to implement hardware counters directly in the Verilog to measure clock cycles, operational latency, and exact throughput to benchmark the FPGA's performance against running the exact same tensor math natively on the host CPU.
+* **UART host interface:** wire up the RX/TX logic so `tpu_host.py`'s protocol actually reaches the chip.
+* **Reconcile the two top levels:** merge the verification top and the synthesis-safe (forced BRAM inference) top into one canonical `mini_tpu.v`.
+* **BRAM routing & matrix scaling:** The Tang Nano 9K's logic gate limit is currently the bottleneck before routing congestion even becomes a problem. Moving weight and input buffers explicitly into dedicated Block RAM instead of distributed logic is the next architectural step to scale this past 2x2.
+* **Silicon profiling:** I want to add hardware cycle counters to benchmark the real FPGA throughput and latency against the same matrix math running natively on a host CPU.
